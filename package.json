@@ -1,32 +1,19 @@
 {
-  "name": "babel-plugin-flow-to-typescript",
+  "name": "@zxbodya/babel-plugin-flow-to-typescript",
   "description": "Babel plugin to convert Flow into TypeScript",
   "license": "MIT",
-  "author": {
-    "name": "Yuichiro Kikura",
-    "email": "y.kikura@gmail.com",
-    "url": "https://github.com/Kiikurage"
-  },
-  "contributors": [
-    {
-      "name": "CureApp"
-    }
-  ],
   "files": [
     "dist/*",
     "README.md"
   ],
-  "version": "0.6.0",
+  "version": "0.10.8",
   "scripts": {
-    "prepare": "npm run build",
-    "test": "jest",
-    "test-watch": "jest --watch",
-    "build": "tsc",
-    "watch": "tsc --watch",
-    "lint": "tslint --project .",
     "cover": "jest --coverage",
     "report-coverage": "codecov",
-    "prettify": "./node_modules/.bin/prettier --write \"{src,test}/**/*.{js,ts,tsx}\""
+    "test": "jest",
+    "clean": "rimraf dist",
+    "prepublishOnly": "yarn run clean && tsc -b --force",
+    "build": "tsc -b"
   },
   "keywords": [
     "babel",
@@ -34,29 +21,25 @@
     "typescript"
   ],
   "main": "dist/index.js",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Kiikurage/babel-plugin-flow-to-typescript.git"
-  },
+  "types": "dist/index.d.ts",
+  "repository": "https://github.com/zxbodya/flowts/tree/master/packages/babel-plugin-flow-to-typescript",
   "peerDependencies": {
     "@babel/core": "^7.4.4"
   },
   "dependencies": {
-    "@babel/template": "^7.7.0",
-    "@babel/traverse": "^7.7.0",
-    "@babel/types": "^7.7.4"
+    "@babel/template": "^7.8.3",
+    "@babel/traverse": "^7.8.4",
+    "@babel/types": "7.9.0"
   },
   "devDependencies": {
-    "@types/babel__traverse": "^7.0.8",
-    "babel-plugin-tester": "^7.0.1",
-    "codecov": "^3.6.1",
-    "jest": "^24.9.0",
-    "prettier": "^1.17.1",
-    "ts-jest": "^24.1.0",
-    "tslint": "^5.20.1",
-    "tslint-config-prettier": "^1.18.0",
-    "tslint-plugin-prettier": "^2.0.1",
-    "typescript": "^3.7.2"
+    "@types/babel__traverse": "7.0.9",
+    "@types/jest": "^25.2.2",
+    "@zxbodya/recast": "^0.18.9",
+    "codecov": "^3.6.5",
+    "jest": "^26.0.1",
+    "rimraf": "^3.0.2",
+    "ts-jest": "^26.0.0",
+    "typescript": "^3.9.2"
   },
   "jest": {
     "testEnvironment": "node",

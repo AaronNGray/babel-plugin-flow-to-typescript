@@ -1,43 +1,60 @@
-import { Flow, isIdentifier, Program, TSTypeReference } from '@babel/types';
+import * as t from '@babel/types';
 import { NodePath, Node } from '@babel/traverse';
-import helperTypes from '../helper_types';
-import { warnOnlyOnce } from '../util';
+import helperTypes from '../helperTypes';
+import { warnOnlyOnce } from '../utils/warnOnlyOnce';
 
-export default {
-  enter(path: NodePath<Program>) {
+export const Program = {
+  enter(path: NodePath<t.Program>) {
     const [firstNode] = path.node.body;
 
-    if (firstNode && firstNode.leadingComments && firstNode.leadingComments.length) {
+    if (
+      firstNode &&
+      firstNode.leadingComments &&
+      firstNode.leadingComments.length
+    ) {
       const commentIndex = firstNode.leadingComments.findIndex(
-        item => item.value.trim() === '@flow',
+        item => item.value.trim() === '@flow'
       );
       if (commentIndex !== -1) {
-        (path.get(`body.0.leadingComments.${commentIndex}`) as NodePath<Node>).remove();
+        (path.get(`body.0.leadingComments.${commentIndex}`) as NodePath<
+          Node
+        >).remove();
       }
     }
     // @ts-ignore recast support
     if (firstNode && firstNode.comments && firstNode.comments.length) {
       // @ts-ignore recast support
-      const commentIndex = firstNode.comments.findIndex(item => item.value.trim() === '@flow');
+      const commentIndex = firstNode.comments.findIndex(
+        (item: any) => item.value.trim() === '@flow'
+      );
       if (commentIndex !== -1) {
         // @ts-ignore recast support
         firstNode.comments.splice(commentIndex, 1);
       }
     }
   },
-  exit(path: NodePath<Program>) {
+  exit(path: NodePath<t.Program>) {
     path.traverse({
       /* istanbul ignore next */
-      Flow(path: NodePath<Flow>) {
-        throw path.buildCodeFrameError('not converted flow node: ' + path.node.type);
+      Flow(path: NodePath<any>) {
+        // @ts-ignore todo: babel incorrectly considers type import to be "Flow" while now it can be also TypeScript
+        if (
+          path.node.type === 'ImportDeclaration' ||
+          path.node.type === 'ExportNamedDeclaration'
+        ) {
+          return;
+        }
+        throw path.buildCodeFrameError(
+          'not converted flow node: ' + path.node.type
+        );
       },
     });
 
     const usedHelperTypes = new Set<keyof typeof helperTypes>();
     path.traverse({
-      TSTypeReference(typeReferencePath: NodePath<TSTypeReference>) {
+      TSTypeReference(typeReferencePath: NodePath<t.TSTypeReference>) {
         const node = typeReferencePath.node;
-        if (isIdentifier(node.typeName)) {
+        if (t.isIdentifier(node.typeName)) {
           const name = node.typeName.name;
           if (name === '$Call') {
             if (node.typeParameters) {
@@ -60,7 +77,7 @@ export default {
                 usedHelperTypes.add('$Call5');
               } else {
                 warnOnlyOnce(
-                  '$Call utility type is used with more then 6 type parameters - this is crazy, do not want to fix',
+                  '$Call utility type is used with more then 6 type parameters - this is crazy, do not want to fix'
                 );
               }
             }
@@ -85,5 +102,108 @@ export default {
       if (after) after.insertAfter(helperTypes[helperName]);
       else body[0].insertBefore(helperTypes[helperName]);
     });
+
+    // function overrides
+    const funcByName = new Map<
+      string,
+      {
+        decl: Array<NodePath<t.TSDeclareFunction>>;
+        impl: Array<NodePath<t.FunctionDeclaration>>;
+        exp: Array<
+          NodePath<t.ExportDefaultDeclaration | t.ExportNamedDeclaration>
+        >;
+      }
+    >();
+
+    function getFunc(name: string) {
+      let func = funcByName.get(name);
+      if (!func) {
+        func = { decl: [], impl: [], exp: [] };
+        funcByName.set(name, func);
+      }
+      return func;
+    }
+
+    function visitPossibliyFuncPath(st: NodePath) {
+      const node = st.node;
+      if (t.isTSDeclareFunction(node)) {
+        if (node.id) {
+          const func = getFunc(node.id.name);
+
+          // @ts-ignore todo: traverse types
+          func.decl.push(st);
+          return func;
+        }
+      }
+      if (t.isFunctionDeclaration(node)) {
+        if (node.id) {
+          const func = getFunc(node.id.name);
+
+          // @ts-ignore todo: traverse types
+          func.impl.push(st);
+          return func;
+        }
+      }
+      return false;
+    }
+
+    for (const st of body) {
+      visitPossibliyFuncPath(st);
+      if (
+        (t.isExportDefaultDeclaration(st.node) ||
+          t.isExportNamedDeclaration(st.node)) &&
+        st.node.declaration
+      ) {
+        // @ts-ignore todo: traverse types
+        const maybeFunc = visitPossibliyFuncPath(st.get('declaration'));
+        if (maybeFunc) {
+          // @ts-ignore todo: traverse types
+          maybeFunc.exp.push(st);
+        }
+      }
+    }
+
+    for (const [, func] of funcByName) {
+      // remove declare keywords if implementation is present
+      if (func.impl.length && func.decl.length) {
+        for (const decl of func.decl) {
+          decl.node.declare = false;
+        }
+        // separate declaration from export if overrides are present, and not everything is exported
+        if (
+          func.exp.length > 0 &&
+          func.exp.length !== func.impl.length + func.decl.length
+        ) {
+          // last export - to split it into declaration and export
+          const exp = func.exp[func.exp.length - 1];
+          // other declarations - to remove `export` keyword from them
+          const expToRemove = func.exp.slice(0, func.exp.length - 1);
+          if (t.isExportDefaultDeclaration(exp.node)) {
+            exp.replaceWithMultiple([
+              exp.node.declaration!,
+              t.exportDefaultDeclaration(
+                // @ts-ignore
+                t.identifier(exp.node.declaration.id.name)
+              ),
+            ]);
+          }
+          if (t.isExportNamedDeclaration(exp.node)) {
+            const specifier = t.identifier(exp.node.declaration.id.name);
+            exp.replaceWithMultiple([
+              exp.node.declaration!,
+              t.exportNamedDeclaration(
+                null,
+                // @ts-ignore
+                [t.exportSpecifier(specifier, specifier)]
+              ),
+            ]);
+          }
+          for (const otherExp of expToRemove) {
+            // @ts-ignore
+            otherExp.replaceWith(otherExp.node.declaration);
+          }
+        }
+      }
+    }
   },
 };
